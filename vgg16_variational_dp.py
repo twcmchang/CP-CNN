@@ -203,7 +203,7 @@ class VGG16:
     def max_pool(self, bottom, name):
         return tf.nn.max_pool(bottom, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name=name)
 
-    def idp_conv_layer(self, bottom, name, dp, training):
+    def idp_conv_layer(self, bottom, name, dp, training=True):
         with tf.name_scope(name+str(int(dp*100))):
             with tf.variable_scope("VGG16",reuse=True):
                 conv_filter = tf.get_variable(name=name+"_W")
@@ -235,14 +235,17 @@ class VGG16:
             moving_variance = tf.get_variable(name=name+'gamma_variance', shape=params_shape,
                                               initializer=tf.ones_initializer(),
                                               trainable=False)
+            from tensorflow.python.training.moving_averages import assign_moving_average
             def mean_var_with_update():
-                mean, variance = tf.nn.moments(conv, tf.shape(conv)[:-1], name='moments')
-                with tf.control_dependencies([assign_moving_average(moving_mean, mean, decay),
-                                              assign_moving_average(moving_variance, variance, decay)]):
+                mean, variance = tf.nn.moments(conv, [0,1,2], name='moments')
+                with tf.control_dependencies([assign_moving_average(moving_mean, mean, 0.9),
+                                              assign_moving_average(moving_variance, variance, 0.9)]):
                     return tf.identity(mean), tf.identity(variance)
-
-            mean, variance = tf.cond(train, mean_var_with_update, lambda: (moving_mean, moving_variance))
-            beta = tf.get_variable('beta', params_shape, initializer=tf.zeros_initializer)
+            if training:
+                mean, variance = mean_var_with_update()
+            else:
+                mean, variance = moving_mean, moving_variance
+            beta = tf.get_variable(name=name+'beta', shape=params_shape, initializer=tf.zeros_initializer())
             conv = tf.nn.batch_normalization(conv, mean, variance, beta, conv_gamma, 1e-05)
 
             # conv = tf.layers.batch_normalization(conv, gamma_initializer=conv_gamma, training=training)
