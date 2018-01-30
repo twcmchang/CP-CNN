@@ -70,9 +70,9 @@ def train(FLAG):
     checkpoint_path = os.path.join(FLAG.save_dir, 'model.ckpt')
 
     tvars_trainable = tf.trainable_variables()
-    for rm in vgg16.gamma_var:
-        tvars_trainable.remove(rm)
-        print('%s is not trainable.'% rm)
+    #for rm in vgg16.gamma_var:
+    #    tvars_trainable.remove(rm)
+    #    print('%s is not trainable.'% rm)
 
     # useful function
     def initialize_uninitialized(sess):
@@ -130,7 +130,8 @@ def train(FLAG):
                 obj = tf.add(obj, new_obj)
             # optimizer
             train_op = opt.minimize(obj, var_list=tvars_trainable)
-
+            spareness = vgg16.spareness()
+            print("initial spareness: %s" % sess.run(spareness))
             # re-initialize
             initialize_uninitialized(sess)
 
@@ -170,6 +171,7 @@ def train(FLAG):
                 val_loss = val_loss/pval.value
                 val_accu = val_accu/pval.value
 
+                print("spareness: %s" % sess.run(spareness))
                 # early stopping check
                 if (current_best_val_loss - val_loss) > min_delta:
                     current_best_val_loss = val_loss

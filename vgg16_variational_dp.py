@@ -194,7 +194,7 @@ class VGG16:
             n_total = tf.cast(tf.reduce_prod(tf.shape(m)), tf.float32)
             N_active += n_active
             N_total += n_total
-        return 1.0 - N_active/N-total
+        return 1.0 - N_active/N_total
 
 
     def avg_pool(self, bottom, name):
