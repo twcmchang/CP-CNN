@@ -38,7 +38,7 @@ class VGG16:
         # parameter dictionary
         self.para_dict = {}
 
-    def build(self, dp, training=True):
+    def build(self, dp, training=True, l1_gamma=0.001, l1_gamma_diff=0.001):
         """
         load variable from npy to build the VGG
         :param rgb: rgb image [batch, height, width, 3] values scaled [0, 1]
@@ -119,14 +119,17 @@ class VGG16:
                 loss = tf.reduce_mean(cross_entropy)
                 accuracy = tf.reduce_mean(tf.cast(tf.equal(x=tf.argmax(logits, 1), y=tf.argmax(self.y, 1)),tf.float32))
                 
-
-                l1_regularizer = tf.contrib.layers.l1_regularizer(scale=0.0001)
-                gamma_l1 = tf.contrib.layers.apply_regularization(l1_regularizer, self.gamma_var)
+                # gamma l1 regularization
+                l1_gamma_regularizer = tf.contrib.layers.l1_regularizer(scale=l1_gamma)
+                gamma_l1 = tf.contrib.layers.apply_regularization(l1_gamma_regularizer, self.gamma_var)
 
                 def tf_diff_axis_0(a):
                     return a[1:]-a[:-1]
                 gamma_diff_var = [tf.nn.relu(tf_diff_axis_0(x)) for x in self.gamma_var]
-                gamma_diff_l1 = tf.contrib.layers.apply_regularization(l1_regularizer, gamma_diff_var)
+
+                # gamma_diff l1 regularization
+                l1_gamma_diff_regularizer = tf.contrib.layers.l1_regularizer(scale=l1_gamma_diff)
+                gamma_diff_l1 = tf.contrib.layers.apply_regularization(l1_gamma_diff_regularizer, gamma_diff_var)
 
                 self.prob_dict["var_dp"] = prob
                 self.loss_dict["var_dp"] = loss + gamma_l1 + gamma_diff_l1

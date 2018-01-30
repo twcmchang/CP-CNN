@@ -17,6 +17,8 @@ def main():
     parser.add_argument('--dataset', type=str, default='CIFAR-10', help='dataset in use')
     parser.add_argument('--prof_type', type=str, default='all-one', help='type of profile coefficient')
     parser.add_argument('--atp', type=int, default=0, help='alternative training procedure')
+    parser.add_argument('--l1', type=float, default=0.001, help='alternative training procedure')
+    parser.add_argument('--l1_diff', type=float, default=0.001, help='alternative training procedure')
     parser.add_argument('--log_dir', type=str, default='log', help='directory containing log text')
     parser.add_argument('--note', type=str, default='', help='argument for taking notes')
     
@@ -59,7 +61,7 @@ def train(FLAG):
         'conv5_3':1.00
     }
     
-    vgg16.build(dp=dp, training=True)
+    vgg16.build(dp=dp, training=True, l1_gamma=FLAG.l1, l1_gamma_diff=FLAG.l1_diff)
 
     # define tasks
     tasks = ['var_dp']
