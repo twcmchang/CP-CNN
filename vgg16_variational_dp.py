@@ -226,28 +226,27 @@ class VGG16:
             # conv_filter = tf.multiply(conv_filter, filter_profile)
             # conv_biases = tf.multiply(conv_biases, profile)
             
-                conv = tf.nn.conv2d(bottom, conv_filter, [1, 1, 1, 1], padding='SAME')
-                conv = tf.nn.bias_add(conv, conv_biases)
-                params_shape = tf.shape(conv)[-1:]
-                moving_mean = tf.get_variable('gamma_mean', params_shape,
-                                              initializer=tf.zeros_initializer,
+            conv = tf.nn.conv2d(bottom, conv_filter, [1, 1, 1, 1], padding='SAME')
+            conv = tf.nn.bias_add(conv, conv_biases)
+            params_shape = conv.get_shape().as_list()[-1:]
+            moving_mean = tf.get_variable(name=name+'gamma_mean', shape=params_shape,
+                                          initializer=tf.zeros_initializer(),
+                                          trainable=False)
+            moving_variance = tf.get_variable(name=name+'gamma_variance', shape=params_shape,
+                                              initializer=tf.ones_initializer(),
                                               trainable=False)
-                moving_variance = tf.get_variable('gamma_variance', params_shape,
-                                                  initializer=tf.ones_initializer,
-                                                  trainable=False)
+            def mean_var_with_update():
+                mean, variance = tf.nn.moments(conv, tf.shape(conv)[:-1], name='moments')
+                with tf.control_dependencies([assign_moving_average(moving_mean, mean, decay),
+                                              assign_moving_average(moving_variance, variance, decay)]):
+                    return tf.identity(mean), tf.identity(variance)
 
-                def mean_var_with_update():
-                    mean, variance = tf.nn.moments(conv, tf.shape(conv)[:-1], name='moments')
-                    with tf.control_dependencies([assign_moving_average(moving_mean, mean, decay),
-                                                  assign_moving_average(moving_variance, variance, decay)]):
-                        return tf.identity(mean), tf.identity(variance)
+            mean, variance = tf.cond(train, mean_var_with_update, lambda: (moving_mean, moving_variance))
+            beta = tf.get_variable('beta', params_shape, initializer=tf.zeros_initializer)
+            conv = tf.nn.batch_normalization(conv, mean, variance, beta, conv_gamma, 1e-05)
 
-                mean, variance = tf.cond(train, mean_var_with_update, lambda: (moving_mean, moving_variance))
-                beta = tf.get_variable('beta', params_shape, initializer=tf.zeros_initializer)
-                conv = tf.nn.batch_normalization(conv, mean, variance, beta, conv_gamma, 1e-05)
-
-                # conv = tf.layers.batch_normalization(conv, gamma_initializer=conv_gamma, training=training)
-                relu = tf.nn.relu(conv)
+            # conv = tf.layers.batch_normalization(conv, gamma_initializer=conv_gamma, training=training)
+            relu = tf.nn.relu(conv)
             
             return relu
 
