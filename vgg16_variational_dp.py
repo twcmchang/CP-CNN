@@ -213,21 +213,21 @@ class VGG16:
                 conv_biases = tf.get_variable(name=name+"_b")
                 conv_gamma  = tf.get_variable(name=name+"_gamma")
     
-            # H,W,C,O = conv_filter.get_shape().as_list()
+            H,W,C,O = conv_filter.get_shape().as_list()
             
-            # create a mask determined by the dot product percentage
-            # n1 = int(O * dp)
-            # n0 = O - n1
-            # mask = tf.constant(value=np.append(np.ones(n1, dtype='float32'), np.zeros(n0, dtype='float32')), dtype=tf.float32)
-            # profile = tf.multiply(conv_gamma, mask)
+            create a mask determined by the dot product percentage
+            n1 = int(O * dp)
+            n0 = O - n1
+            mask = tf.constant(value=np.append(np.ones(n1, dtype='float32'), np.zeros(n0, dtype='float32')), dtype=tf.float32)
+            profile = tf.multiply(conv_gamma, mask)
 
-            # # create a profile coefficient, gamma
-            # filter_profile = tf.stack([profile for i in range(H*W*C)])
-            # filter_profile = tf.reshape(filter_profile, shape=(H, W, C, O))
+            # create a profile coefficient, gamma
+            filter_profile = tf.stack([profile for i in range(H*W*C)])
+            filter_profile = tf.reshape(filter_profile, shape=(H, W, C, O))
 
-            # # IDP conv2d output
-            # conv_filter = tf.multiply(conv_filter, filter_profile)
-            # conv_biases = tf.multiply(conv_biases, profile)
+            # IDP conv2d output
+            conv_filter = tf.multiply(conv_filter, filter_profile)
+            conv_biases = tf.multiply(conv_biases, profile)
             
             conv = tf.nn.conv2d(bottom, conv_filter, [1, 1, 1, 1], padding='SAME')
             conv = tf.nn.bias_add(conv, conv_biases)
@@ -250,8 +250,6 @@ class VGG16:
                 mean, variance = moving_mean, moving_variance
             beta = tf.get_variable(name=name+'beta', shape=params_shape, initializer=tf.zeros_initializer())
             conv = tf.nn.batch_normalization(conv, mean, variance, beta, conv_gamma, 1e-05)
-
-            # conv = tf.layers.batch_normalization(conv, gamma_initializer=conv_gamma, training=training)
             relu = tf.nn.relu(conv)
             
             return relu
