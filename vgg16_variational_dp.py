@@ -124,8 +124,8 @@ class VGG16:
                 gamma_l1 = tf.contrib.layers.apply_regularization(l1_gamma_regularizer, self.gamma_var)
 
                 def tf_diff_axis_0(a):
-                    return a[1:]-a[:-1]
-                gamma_diff_var = [tf.nn.relu(tf_diff_axis_0(x)) for x in self.gamma_var]
+                    return tf.divide(tf.nn.relu(a[1:]-a[:-1]),tf.abs(a[:-1]))
+                gamma_diff_var = [tf_diff_axis_0(x) for x in self.gamma_var]
 
                 # gamma_diff l1 regularization
                 l1_gamma_diff_regularizer = tf.contrib.layers.l1_regularizer(scale=l1_gamma_diff)
@@ -192,12 +192,12 @@ class VGG16:
     def spareness(self, thresh=0.1):
         N_active, N_total = 0., 0.
         for gamma in self.gamma_var:
-            m = tf.cast(tf.less(gamma, thresh), tf.float32)
+            m = tf.cast(tf.less(tf.abs(gamma), thresh), tf.float32)
             n_active = tf.reduce_sum(m)
             n_total = tf.cast(tf.reduce_prod(tf.shape(m)), tf.float32)
             N_active += n_active
             N_total += n_total
-        return 1.0 - N_active/N_total
+        return N_active/N_total
 
 
     def avg_pool(self, bottom, name):
@@ -293,7 +293,7 @@ class VGG16:
             n_other = n - n_ones
             return np.append(np.ones(n_ones, dtype=dtype), np.exp((1-k)*np.arange(n_other), dtype=dtype))
         if prof_type == "linear":
-            profile = np.linspace(1.0,0.0, num=C, endpoint=False, dtype='float32')
+            profile = np.linspace(2.0,0.0, num=C, endpoint=False, dtype='float32')
         elif prof_type == "all-one":
             profile = np.ones(C, dtype='float32')
         elif prof_type == "half-exp":
