@@ -135,3 +135,26 @@ class CIFAR100(CIFAR10):
     test_list = [
         ['test', 'f0ef6b0ae62326f3e7ffdfab6717acfc'],
     ]
+
+
+def gamma_sparsify_VGG16(para_dict, thresh=0.5):
+    last = None
+    sparse_dict = {}
+    for k, v in sorted(para_dict.items()):
+        if 'gamma' in k:
+            gamma = v
+            this = np.where(gamma > thresh)[0]
+            key = str.split(k,'_gamma')[0]
+            conv_, bias_ = para_dict[key]
+            conv_ = conv_[:,:,:,this]
+            if last is not None:
+                conv_ = conv_[:,:,last,:]
+            bias_ = bias_[this]
+            sparse_dict[key] = [conv_, bias_]
+            last = this
+    W_, b_ = para_dict['fc_1']
+    W_ = W_[last,:]
+    b_ = b_[last]
+    sparse_dict['fc_1'] = [W_, b_]
+    sparse_dict['fc_2'] = para_dict['fc_2']
+    return sparse_dict
