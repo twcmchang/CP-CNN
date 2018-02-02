@@ -309,7 +309,7 @@ class VGG16:
                 with tf.control_dependencies([assign_moving_average(moving_mean, mean, 0.9),
                                               assign_moving_average(moving_variance, variance, 0.9)]):
                     return tf.identity(mean), tf.identity(variance)
-            if self.infer:
+            if not self.infer:
                 mean, variance = mean_var_with_update()
             else:
                 mean, variance = moving_mean, moving_variance
