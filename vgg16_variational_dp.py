@@ -65,15 +65,18 @@ class VGG16:
         ])
         assert self.x.get_shape().as_list()[1:] == [self.H, self.W, self.C]
 
-        if type(dp) != dict:
-            raise ValueError("when block_variational is True, dp must be a dictionary.")
+        # if type(dp) != dict:
+        #     raise ValueError("when block_variational is True, dp must be a dictionary.")
 
         # declare and initialize the weights of VGG16
         with tf.variable_scope("VGG16"):
             for k, v in sorted(dp.items()):
-                (conv_filter, gamma), conv_bias = self.get_conv_filter(k, conv_pre_training), self.get_bias(k, conv_pre_training)
+                (conv_filter, gamma, beta, bn_mean, bn_variance), conv_bias = self.get_conv_filter(k, conv_pre_training), self.get_bias(k, conv_pre_training)
                 self.para_dict[k] = [conv_filter, conv_bias]
                 self.para_dict[k+"_gamma"] = gamma
+                self.para_dict[k+"_beta"] = beta
+                self.para_dict[k+"_bn_mean"] = bn_mean
+                self.para_dict[k+"_bn_variance"] = bn_variance
                 self.gamma_var.append(self.para_dict[k+"_gamma"])
 
             if fc_pre_training:
@@ -85,13 +88,18 @@ class VGG16:
             else:
                 # the last fully connected layers should be trained
                 # user specified fully connected layers
-                fc_W = tf.get_variable(name="fc_1_W", shape=(512, 512), initializer=tf.truncated_normal_initializer(mean=0, stddev=0.1), dtype=tf.float32)
-                fc_b = tf.get_variable(name="fc_1_b", shape=(512,), initializer=tf.ones_initializer(), dtype=tf.float32)
+                fc_W = self.get_fc_layer('fc_1', fc_pre_training, shape=(512, 512))
+                fc_b = self.get_bias('fc_1', fc_pre_training, shape=(512,))
                 self.para_dict['fc_1'] = [fc_W, fc_b]
-
-                fc_W = tf.get_variable(name="fc_2_W", shape=(512, 10), initializer=tf.truncated_normal_initializer(mean=0, stddev=0.1), dtype=tf.float32)
-                fc_b = tf.get_variable(name="fc_2_b", shape=(10,), initializer=tf.ones_initializer(), dtype=tf.float32)
+                # fc_W = tf.get_variable(name="fc_1_W", shape=(512, 512), initializer=tf.truncated_normal_initializer(mean=0, stddev=0.1), dtype=tf.float32)
+                # fc_b = tf.get_variable(name="fc_1_b", shape=(512,), initializer=tf.ones_initializer(), dtype=tf.float32)
+                # self.para_dict['fc_1'] = [fc_W, fc_b]
+                fc_W = self.get_fc_layer('fc_2', fc_pre_training, shape=(512, 10))
+                fc_b = self.get_bias('fc_2', fc_pre_training, shape=(10,))
                 self.para_dict['fc_2'] = [fc_W, fc_b]
+                # fc_W = tf.get_variable(name="fc_2_W", shape=(512, 10), initializer=tf.truncated_normal_initializer(mean=0, stddev=0.1), dtype=tf.float32)
+                # fc_b = tf.get_variable(name="fc_2_b", shape=(10,), initializer=tf.ones_initializer(), dtype=tf.float32)
+                # self.para_dict['fc_2'] = [fc_W, fc_b]
 
         with tf.name_scope("var_dp"):
             conv1_1 = self.idp_conv_bn_layer( self.x, "conv1_1", dp["conv1_1"])
@@ -132,16 +140,24 @@ class VGG16:
             l1_gamma_regularizer = tf.contrib.layers.l1_regularizer(scale=l1_gamma)
             gamma_l1 = tf.contrib.layers.apply_regularization(l1_gamma_regularizer, self.gamma_var)
 
-            def tf_diff_axis_0(a):
-                return tf.divide(tf.nn.relu(a[1:]-a[:-1]),tf.abs(a[:-1]))
-            gamma_diff_var = [tf_diff_axis_0(x) for x in self.gamma_var]
-
             # gamma_diff l1 regularization
+            def non_increasing_constraint_axis_0(a):
+                return tf.nn.relu(a[1:]-a[:-1])
+            gamma_diff_var = [non_increasing_constraint_axis_0(x) for x in self.gamma_var]
+
             l1_gamma_diff_regularizer = tf.contrib.layers.l1_regularizer(scale=l1_gamma_diff)
             gamma_diff_l1 = tf.contrib.layers.apply_regularization(l1_gamma_diff_regularizer, gamma_diff_var)
 
+            # gamma_range l1 regularization
+            def range_contraint_axis_0(a):
+                return tf.subtract(a[-1], a[0])
+            gamma_range_var = [range_contraint_axis_0(x) for x in self.gamma_var]
+
+            l1_gamma_range_regularizer = tf.contrib.layers.l1_regularizer(scale=l1_gamma_diff)
+            gamma_range_l1 = tf.contrib.layers.apply_regularization(l1_gamma_range_regularizer, gamma_range_var)
+
             self.prob_dict["var_dp"] = prob
-            self.loss_dict["var_dp"] = loss + gamma_l1 + gamma_diff_l1
+            self.loss_dict["var_dp"] = loss + gamma_l1 + gamma_diff_l1 + gamma_range_l1
             self.accu_dict["var_dp"] = accuracy
             
             tf.summary.scalar(name="accu_var_dp", tensor=accuracy)
@@ -154,7 +170,7 @@ class VGG16:
             raise ValueError("when block_variational is False, dp must be a list.")
         self.dp = dp 
         print("Will optimize at DP=", self.dp)
-
+        start_time = time.time()
         # create operations at every dot product percentages
         for dp_i in dp:
             with tf.name_scope(str(int(dp_i*100))):
@@ -182,10 +198,10 @@ class VGG16:
                 pool5 = self.max_pool(conv5_3, 'pool5')
 
                 fc_1 = self.fc_layer(pool5, 'fc_1')
-                fc_1 = tf.nn.dropout(fc_1, keep_prob=0.5)
+                #fc_1 = tf.nn.dropout(fc_1, keep_prob=0.5)
                 fc_1 = tf.nn.relu(fc_1)
-
-                logits = tf.nn.bias_add(tf.matmul( fc_1, self.fc_2_W), self.fc_2_b)
+                
+                logits = self.fc_layer(fc_1, 'fc_2')
                 prob = tf.nn.softmax(logits, name="prob")
 
                 cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=self.y)
@@ -199,13 +215,7 @@ class VGG16:
                 tf.summary.scalar(name="accu_at_"+str(int(dp_i*100)), tensor=accuracy)
                 tf.summary.scalar(name="loss_at_"+str(int(dp_i*100)), tensor=loss)
         self.summary_op = tf.summary.merge_all()
-        print(("build model finished: %ds" % (time.time() - start_time)))
-
-    def get_sparsified_paras(self, thresh):
-        """
-        
-        """
-        #self.para_dict[]
+        print(("Set dp operations finished: %ds" % (time.time() - start_time)))
 
     def get_conv_dp_paras(self, dp):
         C = None
@@ -276,7 +286,9 @@ class VGG16:
                 conv_filter = tf.get_variable(name=name+"_W")
                 conv_biases = tf.get_variable(name=name+"_b")
                 conv_gamma  = tf.get_variable(name=name+"_gamma")
-    
+                moving_mean = tf.get_variable(name=name+'_bn_mean')
+                moving_variance = tf.get_variable(name=name+'_bn_variance')
+                beta = tf.get_variable(name=name+'_beta')
             H,W,C,O = conv_filter.get_shape().as_list()
             
             # create a mask determined by the dot product percentage
@@ -295,13 +307,13 @@ class VGG16:
             
             conv = tf.nn.conv2d(bottom, conv_filter, [1, 1, 1, 1], padding='SAME')
             conv = tf.nn.bias_add(conv, conv_biases)
-            params_shape = conv.get_shape().as_list()[-1:]
+            # params_shape = conv.get_shape().as_list()[-1:]
             
-            with tf.variable_scope("VGG16"):
-                moving_mean = tf.get_variable(name=name+'_gamma_mean', shape=params_shape,
-                                            initializer=tf.zeros_initializer(),trainable=False)
-                moving_variance = tf.get_variable(name=name+'_gamma_variance', shape=params_shape,
-                                            initializer=tf.ones_initializer(),trainable=False)
+            # with tf.variable_scope("VGG16", reuse=tf.AUTO_REUSE):
+            #     moving_mean = tf.get_variable(name=name+'_bn_mean', shape=params_shape,
+            #                                 initializer=tf.zeros_initializer(),trainable=False)
+            #     moving_variance = tf.get_variable(name=name+'_bn_variance', shape=params_shape,
+            #                                 initializer=tf.ones_initializer(),trainable=False)
 
             from tensorflow.python.training.moving_averages import assign_moving_average
             def mean_var_with_update():
@@ -313,7 +325,8 @@ class VGG16:
                 mean, variance = mean_var_with_update()
             else:
                 mean, variance = moving_mean, moving_variance
-            beta = tf.get_variable(name=name+'beta', shape=params_shape, initializer=tf.zeros_initializer())
+            # with tf.variable_scope("VGG16", reuse=tf.AUTO_REUSE):
+            #     beta = tf.get_variable(name=name+'_beta', shape=params_shape, initializer=tf.zeros_initializer())
             conv = tf.nn.batch_normalization(conv, mean, variance, beta, conv_gamma, 1e-05)
             relu = tf.nn.relu(conv)
             
@@ -339,18 +352,50 @@ class VGG16:
     def get_conv_filter(self, name, pre_training):
         if pre_training:
             conv_filter = tf.get_variable(initializer=self.data_dict[name][0], name=name+"_W")
-            gamma = tf.get_variable(initialize=self.data_dict[name+"_gamma"], name=name+"_gamma")
         else:
             conv_filter = tf.get_variable(shape=self.data_dict[name][0].shape, initializer=tf.truncated_normal_initializer(mean=0, stddev=0.1), name=name+"_W", dtype=tf.float32)
-            H,W,C,O = conv_filter.get_shape().as_list()
+        
+        H,W,C,O = conv_filter.get_shape().as_list()
+        if pre_training and name+"_gamma" in self.data_dict.keys(): 
+            gamma = tf.get_variable(initializer=self.data_dict[name+"_gamma"], name=name+"_gamma")
+        else:
             gamma = tf.get_variable(initializer=self.get_profile(O, self.prof_type), name=name+"_gamma", dtype=tf.float32)
-        return conv_filter, gamma
+
+        if pre_training and name+"_beta" in self.data_dict.keys(): 
+            beta = tf.get_variable(initializer=self.data_dict[name+"_beta"], name=name+"_beta")
+        else:
+            beta = tf.get_variable(initializer=self.get_profile(O, self.prof_type), name=name+"_beta", dtype=tf.float32)
+
+        if pre_training and name+"_bn_mean" in self.data_dict.keys(): 
+            bn_mean = tf.get_variable(initializer=self.data_dict[name+"_bn_mean"], name=name+"_bn_mean")
+        else:
+            bn_mean = tf.get_variable(initializer=self.get_profile(O, self.prof_type), name=name+"_bn_mean", dtype=tf.float32)
+
+        if pre_training and name+"_bn_variance" in self.data_dict.keys(): 
+            bn_variance = tf.get_variable(initializer=self.data_dict[name+"_bn_variance"], name=name+"_bn_variance")
+        else:
+            bn_variance = tf.get_variable(initializer=self.get_profile(O, self.prof_type), name=name+"_bn_variance", dtype=tf.float32)
+        # if pre_training:
+        #     conv_filter = tf.get_variable(initializer=self.data_dict[name][0], name=name+"_W")
+        #     gamma = tf.get_variable(initializer=self.data_dict[name+"_gamma"], name=name+"_gamma")
+        #     beta = tf.get_variable(initializer=self.data_dict[name+"_beta"], name=name+"_beta")
+        #     bn_mean = tf.get_variable(initializer=self.data_dict[name+"_bn_mean"], name=name+"_bn_mean")
+        #     bn_variance = tf.get_variable(initializer=self.data_dict[name+"_bn_variance"], name=name+"_bn_variance")
+        # else:
+        #     conv_filter = tf.get_variable(shape=self.data_dict[name][0].shape, initializer=tf.truncated_normal_initializer(mean=0, stddev=0.1), name=name+"_W", dtype=tf.float32)
+        #     H,W,C,O = conv_filter.get_shape().as_list()
+        #     gamma = tf.get_variable(initializer=self.get_profile(O, self.prof_type), name=name+"_gamma", dtype=tf.float32)
+        #     beta = tf.get_variable(shape=(O,), initializer=tf.zeros_initializer(), name=name+'_beta')
+        #     bn_mean = tf.get_variable(shape=(O,), initializer=tf.zeros_initializer(), name=name+'_bn_mean', trainable=False)
+        #     bn_variance = tf.get_variable(shape=(O,),initializer=tf.ones_initializer(), name=name+'_bn_variance', trainable=False)
+        return conv_filter, gamma, beta, bn_mean, bn_variance
 
     def get_bias(self, name, pre_training, shape=None):
         if pre_training:
-            return tf.get_variable(initializer=self.data_dict[name][1], name=name+"_b")
+            bias = tf.get_variable(initializer=self.data_dict[name][1], name=name+"_b")
         else:
-            return tf.get_variable(shape=shape, initializer=tf.truncated_normal_initializer(mean=0, stddev=0.1), name=name+"_b", dtype=tf.float32)
+            bias = tf.get_variable(shape=shape, initializer=tf.truncated_normal_initializer(mean=0, stddev=0.1), name=name+"_b", dtype=tf.float32)
+        return bias
     
     def get_fc_layer(self, name, pre_training, shape=None):
         if pre_training:
