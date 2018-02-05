@@ -339,10 +339,11 @@ class VGG16:
     def get_conv_filter(self, name, pre_training):
         if pre_training:
             conv_filter = tf.get_variable(initializer=self.data_dict[name][0], name=name+"_W")
+            gamma = tf.get_variable(initialize=self.data_dict[name+"_gamma"], name=name+"_gamma")
         else:
             conv_filter = tf.get_variable(shape=self.data_dict[name][0].shape, initializer=tf.truncated_normal_initializer(mean=0, stddev=0.1), name=name+"_W", dtype=tf.float32)
-        H,W,C,O = conv_filter.get_shape().as_list()
-        gamma = tf.get_variable(initializer=self.get_profile(O, self.prof_type), name=name+"_gamma", dtype=tf.float32)
+            H,W,C,O = conv_filter.get_shape().as_list()
+            gamma = tf.get_variable(initializer=self.get_profile(O, self.prof_type), name=name+"_gamma", dtype=tf.float32)
         return conv_filter, gamma
 
     def get_bias(self, name, pre_training, shape=None):
