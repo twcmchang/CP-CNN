@@ -36,57 +36,59 @@ def train(FLAG):
     Xtest, Ytest = test_data.test_data, test_data.test_labels
 
     print("Build VGG16 models...")
-    vgg16 = VGG16(FLAG.init_from, prof_type=FLAG.prof_type)
+    vgg16 = VGG16(FLAG.init_from, prof_type=FLAG.prof_type, infer=True)
+
+    dp ={
+        'conv1_1':1.00,
+        'conv1_2':1.00,
+        'conv2_1':1.00,
+        'conv2_2':1.00,
+        'conv3_1':1.00,
+        'conv3_2':1.00,
+        'conv3_3':1.00,
+        'conv4_1':1.00,
+        'conv4_2':1.00,
+        'conv4_3':1.00,
+        'conv5_1':1.00,
+        'conv5_2':1.00,
+        'conv5_3':1.00
+    }
+    
+    vgg16.build(dp=dp, conv_pre_training=True, fc_pre_training=True)
 
     # build model using  dp
     dp = [(i+1)*0.05 for i in range(1,20)]
-
-    # dp ={
-    #     'conv1_1':1.00,
-    #     'conv1_2':1.00,
-    #     'conv2_1':1.00,
-    #     'conv2_2':1.00,
-    #     'conv3_1':1.00,
-    #     'conv3_2':1.00,
-    #     'conv3_3':1.00,
-    #     'conv4_1':1.00,
-    #     'conv4_2':1.00,
-    #     'conv4_3':1.00,
-    #     'conv5_1':1.00,
-    #     'conv5_2':1.00,
-    #     'conv5_3':1.00
-    # }
-    
-    vgg16.build(dp=dp, training=False)
+    vgg16.set_idp_operation(dp=dp)
 
     with tf.Session() as sess:
-        if FLAG.save_dir is not None:
-            sess.run(tf.global_variables_initializer())
-            saver = tf.train.Saver()
-            ckpt = tf.train.get_checkpoint_state(FLAG.save_dir)
+        # if FLAG.save_dir is not None:
+        #     sess.run(tf.global_variables_initializer())
+            # saver = tf.train.Saver()
+            # ckpt = tf.train.get_checkpoint_state(FLAG.save_dir)
             
-            if ckpt and ckpt.model_checkpoint_path:
+            # if ckpt and ckpt.model_checkpoint_path:
                 # count = 0
                 # for checkpoint in ckpt.all_model_checkpoint_paths:
                 #     saver.restore(sess, checkpoint)
                 #     print("Model restored %s" % checkpoint)
                 #     sess.run(tf.global_variables())
                 #     print("Initialized")
-
-                saver.restore(sess, ckpt.model_checkpoint_path)
-                print("Model restored %s" % ckpt.model_checkpoint_path)
-                sess.run(tf.global_variables())
-            print("Initialized")
-                    count += 1
-                    output = []
-                    for dp_i in dp:
-                        accu = sess.run(vgg16.accu_dict[str(int(dp_i*100))], feed_dict={vgg16.x: Xtest[:5000,:], vgg16.y: Ytest[:5000,:]})
-                        accu2 = sess.run(vgg16.accu_dict[str(int(dp_i*100))], feed_dict={vgg16.x: Xtest[5000:,:], vgg16.y: Ytest[5000:,:]})
-                        output.append((accu+accu2)/2)
-                        print("At DP={dp:.4f}, accu={perf:.4f}".format(dp=dp_i, perf=(accu+accu2)/2))
-                    res = pd.DataFrame.from_dict({'DP':[int(dp_i*100) for dp_i in dp],'accu':output})
-                    res.to_csv("task%s_%s" % (count, FLAG.output), index=False)
-                    print("Write into task%s_%s" % (count, FLAG.output))
+                # saver.restore(sess, ckpt.model_checkpoint_path)
+                # print("Model restored %s" % ckpt.model_checkpoint_path)
+                # sess.run(tf.global_variables())
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.global_variables())
+        print("Initialized")
+        count += 1
+        output = []
+        for dp_i in dp:
+            accu = sess.run(vgg16.accu_dict[str(int(dp_i*100))], feed_dict={vgg16.x: Xtest[:5000,:], vgg16.y: Ytest[:5000,:]})
+            accu2 = sess.run(vgg16.accu_dict[str(int(dp_i*100))], feed_dict={vgg16.x: Xtest[5000:,:], vgg16.y: Ytest[5000:,:]})
+            output.append((accu+accu2)/2)
+            print("At DP={dp:.4f}, accu={perf:.4f}".format(dp=dp_i, perf=(accu+accu2)/2))
+        res = pd.DataFrame.from_dict({'DP':[int(dp_i*100) for dp_i in dp],'accu':output})
+        res.to_csv("task%s_%s" % (count, FLAG.output), index=False)
+        print("Write into task%s_%s" % (count, FLAG.output))
 
 
 if __name__ == '__main__':
