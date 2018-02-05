@@ -1,3 +1,4 @@
+# %load utils.py
 from PIL import Image
 import os
 import errno
@@ -140,21 +141,45 @@ class CIFAR100(CIFAR10):
 def gamma_sparsify_VGG16(para_dict, thresh=0.5):
     last = None
     sparse_dict = {}
+    N_total, N_remain = 0., 0.
     for k, v in sorted(para_dict.items()):
         if 'gamma' in k:
-            gamma = v
-            this = np.where(gamma > thresh)[0]
+            # trim networks based on gamma
+            gamma = v                      
+            if 'conv1' in k:
+                this = np.where(np.abs(gamma) < 10000)[0]
+            else:
+                this = np.where(np.abs(gamma) > thresh)[0]
+            if len(this) == 0:
+                amp_factor = 1
+            else:
+                amp_factor = len(gamma)/len(this)
+            
+            sparse_dict[k] = gamma[this] * amp_factor
+            # get the layer name
             key = str.split(k,'_gamma')[0]
+            
+            # trim conv
             conv_, bias_ = para_dict[key]
             conv_ = conv_[:,:,:,this]
             if last is not None:
                 conv_ = conv_[:,:,last,:]
             bias_ = bias_[this]
             sparse_dict[key] = [conv_, bias_]
+            
+            # get corresponding beta, bn_mean, bn_variance
+            sparse_dict[key+"_beta"] = para_dict[key+"_beta"][this] * amp_factor
+            sparse_dict[key+"_bn_mean"] = para_dict[key+"_bn_mean"][this]
+            sparse_dict[key+"_bn_variance"] = para_dict[key+"_bn_variance"][this]
+            
+            # update
             last = this
+            print('%s from %s to %s : %s ' % (k, len(gamma), len(this), len(this)/len(gamma)))
+            N_total += len(gamma)
+            N_remain += len(this)
+    print('sparsify %s percentage' % (N_remain/N_total))
     W_, b_ = para_dict['fc_1']
     W_ = W_[last,:]
-    b_ = b_[last]
     sparse_dict['fc_1'] = [W_, b_]
     sparse_dict['fc_2'] = para_dict['fc_2']
-    return sparse_dict
+    return sparse_dict, N_remain/N_total
