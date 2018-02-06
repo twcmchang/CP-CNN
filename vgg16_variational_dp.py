@@ -38,7 +38,7 @@ class VGG16:
         # parameter dictionary
         self.para_dict = {}
 
-    def build(self, dp, conv_pre_training=True, fc_pre_training=True , l1_gamma=0.001, l1_gamma_diff=0.001):
+    def build(self, dp, conv_pre_training=True, fc_pre_training=True , l1_gamma=0.001, l1_gamma_diff=0.001, decay=0.0002, keep_prob=0.0):
         """
         load variable from npy to build the VGG
         :param rgb: rgb image [batch, height, width, 3] values scaled [0, 1]
@@ -64,7 +64,9 @@ class VGG16:
                red - VGG_MEAN[2],
         ])
         assert self.x.get_shape().as_list()[1:] == [self.H, self.W, self.C]
-
+        
+        self._weight_decay = 0.0
+        self._keep_prob = keep_prob
         # if type(dp) != dict:
         #     raise ValueError("when block_variational is True, dp must be a dictionary.")
 
@@ -78,6 +80,9 @@ class VGG16:
                 self.para_dict[k+"_bn_mean"] = bn_mean
                 self.para_dict[k+"_bn_variance"] = bn_variance
                 self.gamma_var.append(self.para_dict[k+"_gamma"])
+
+                # weight decay
+                self._weight_decay += tf.nn.l2_loss(conv_filter)+tf.nn.l2_loss(conv_bias)
 
             if fc_pre_training:
                 fc_W, fc_b = self.get_fc_layer('fc_1', fc_pre_training), self.get_bias('fc_1', fc_pre_training)
@@ -126,7 +131,7 @@ class VGG16:
             pool5 = self.max_pool(conv5_3, 'pool5')
 
             fc_1 = self.fc_layer(pool5, 'fc_1')
-            fc_1 = tf.nn.dropout(fc_1, keep_prob=0.5)
+            fc_1 = tf.nn.dropout(fc_1, keep_prob=self._keep_prob)
             fc_1 = tf.nn.relu(fc_1)
             
             logits = self.fc_layer(fc_1, 'fc_2')
@@ -152,12 +157,16 @@ class VGG16:
             def range_contraint_axis_0(a):
                 return tf.subtract(a[-1], a[0])
             gamma_range_var = [range_contraint_axis_0(x) for x in self.gamma_var]
-
             l1_gamma_range_regularizer = tf.contrib.layers.l1_regularizer(scale=l1_gamma_diff)
             gamma_range_l1 = tf.contrib.layers.apply_regularization(l1_gamma_range_regularizer, gamma_range_var)
 
+            # gradient
+            gamma_grad_var = [tf.nn.relu(tf.gradients(loss, x)[0]) for x in self.gamma_var]
+            l2_gamma_grad_regularizer = tf.contrib.layers.l2_regularizer(scale=l1_gamma_diff)
+            gamma_grad_l2 = tf.contrib.layers.apply_regularization(l2_gamma_grad_regularizer, gamma_grad_var)
+
             self.prob_dict["var_dp"] = prob
-            self.loss_dict["var_dp"] = loss + gamma_l1 + gamma_diff_l1 + gamma_range_l1
+            self.loss_dict["var_dp"] = loss + gamma_l1 + gamma_diff_l1 + self._weight_decay * decay # gamma_range_l1 # gamma_grad_l2 
             self.accu_dict["var_dp"] = accuracy
             
             tf.summary.scalar(name="accu_var_dp", tensor=accuracy)
@@ -198,7 +207,7 @@ class VGG16:
                 pool5 = self.max_pool(conv5_3, 'pool5')
 
                 fc_1 = self.fc_layer(pool5, 'fc_1')
-                #fc_1 = tf.nn.dropout(fc_1, keep_prob=0.5)
+                fc_1 = tf.nn.dropout(fc_1, keep_prob=self._keep_prob)
                 fc_1 = tf.nn.relu(fc_1)
                 
                 logits = self.fc_layer(fc_1, 'fc_2')
@@ -362,19 +371,19 @@ class VGG16:
             gamma = tf.get_variable(initializer=self.get_profile(O, self.prof_type), name=name+"_gamma", dtype=tf.float32)
 
         if pre_training and name+"_beta" in self.data_dict.keys(): 
-            beta = tf.get_variable(initializer=self.data_dict[name+"_beta"], name=name+"_beta")
+            beta = tf.get_variable(initializer=self.data_dict[name+"_beta"], name=name+"_beta", trainable=False)
         else:
-            beta = tf.get_variable(initializer=self.get_profile(O, self.prof_type), name=name+"_beta", dtype=tf.float32)
+            beta = tf.get_variable(shape=(O,), initializer=tf.zeros_initializer(), name=name+'_beta')
 
         if pre_training and name+"_bn_mean" in self.data_dict.keys(): 
             bn_mean = tf.get_variable(initializer=self.data_dict[name+"_bn_mean"], name=name+"_bn_mean")
         else:
-            bn_mean = tf.get_variable(initializer=self.get_profile(O, self.prof_type), name=name+"_bn_mean", dtype=tf.float32)
+            bn_mean = tf.get_variable(shape=(O,), initializer=tf.zeros_initializer(), name=name+'_bn_mean', trainable=False)
 
         if pre_training and name+"_bn_variance" in self.data_dict.keys(): 
             bn_variance = tf.get_variable(initializer=self.data_dict[name+"_bn_variance"], name=name+"_bn_variance")
         else:
-            bn_variance = tf.get_variable(initializer=self.get_profile(O, self.prof_type), name=name+"_bn_variance", dtype=tf.float32)
+            bn_variance = tf.get_variable(shape=(O,),initializer=tf.ones_initializer(), name=name+'_bn_variance', trainable=False)
         # if pre_training:
         #     conv_filter = tf.get_variable(initializer=self.data_dict[name][0], name=name+"_W")
         #     gamma = tf.get_variable(initializer=self.data_dict[name+"_gamma"], name=name+"_gamma")
