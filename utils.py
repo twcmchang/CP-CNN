@@ -1,4 +1,3 @@
-# %load utils.py
 from PIL import Image
 import os
 import errno
@@ -153,9 +152,9 @@ def gamma_sparsify_VGG16(para_dict, thresh=0.5):
             if len(this) == 0:
                 amp_factor = 1
             else:
-                amp_factor = len(gamma)/len(this)
-            
+                amp_factor = np.sum(gamma)/np.sum(gamma[this])
             sparse_dict[k] = gamma[this] * amp_factor
+            
             # get the layer name
             key = str.split(k,'_gamma')[0]
             
@@ -168,7 +167,7 @@ def gamma_sparsify_VGG16(para_dict, thresh=0.5):
             sparse_dict[key] = [conv_, bias_]
             
             # get corresponding beta, bn_mean, bn_variance
-            sparse_dict[key+"_beta"] = para_dict[key+"_beta"][this] * amp_factor
+            sparse_dict[key+"_beta"] = para_dict[key+"_beta"][this]
             sparse_dict[key+"_bn_mean"] = para_dict[key+"_bn_mean"][this]
             sparse_dict[key+"_bn_variance"] = para_dict[key+"_bn_variance"][this]
             
