@@ -22,7 +22,8 @@ def main():
     parser.add_argument('--l1_diff', type=float, default=0.001, help='alternative training procedure')
     parser.add_argument('--log_dir', type=str, default='log', help='directory containing log text')
     parser.add_argument('--note', type=str, default='', help='argument for taking notes')
-    
+    parser.add_argument('--decay', type=float, default=0.0002, help='l2 loss of weight')
+    parser.add_argument('--keep_prob', type=float, default=0.2, help='dropout keep probability for fc layer')    
     FLAG = parser.parse_args()
     train(FLAG)
 
@@ -59,7 +60,7 @@ def train(FLAG):
         'conv5_3':1.00
     }
     
-    vgg16.build(dp=dp, conv_pre_training=True, fc_pre_training=False, l1_gamma=FLAG.l1, l1_gamma_diff=FLAG.l1_diff)
+    vgg16.build(dp=dp, conv_pre_training=True, fc_pre_training=False, l1_gamma=FLAG.l1, l1_gamma_diff=FLAG.l1_diff, decay=FLAG.decay, keep_prob=FLAG.keep_prob)
 
     # build model using  dp
     # dp = [(i+1)*0.05 for i in range(1,20)]
@@ -90,7 +91,7 @@ def train(FLAG):
         sess.run(tf.global_variables_initializer())
 
         # hyper parameters
-        learning_rate = 2e-4
+        learning_rate = 5e-4
         batch_size = 32
         alpha = 0.5
         early_stop_patience = 4
