@@ -110,8 +110,8 @@ class VGG16:
                 fc_b = self.get_bias('fc_1', fc_pre_training, shape=(512,))
                 self.para_dict['fc_1'] = [fc_W, fc_b]
 
-                fc_W = self.get_fc_layer('fc_2', fc_pre_training, shape=(512, 10))
-                fc_b = self.get_bias('fc_2', fc_pre_training, shape=(10,))
+                fc_W = self.get_fc_layer('fc_2', fc_pre_training, shape=(512, self.classes))
+                fc_b = self.get_bias('fc_2', fc_pre_training, shape=(self.classes,))
                 self.para_dict['fc_2'] = [fc_W, fc_b]
         print(("build model finished: %ds" % (time.time() - start_time)))
 
@@ -187,7 +187,7 @@ class VGG16:
         self.summary_op = tf.summary.merge_all()        
         print(("sparsity train operation setup: %ds" % (time.time() - start_time)))
     
-    def set_idp_operation(self, dp, keep_prob=1.0):
+    def set_idp_operation(self, dp, decay=0.0002, keep_prob=1.0):
         self._keep_prob = keep_prob
         if type(dp) != list:
             raise ValueError("when block_variational is False, dp must be a list.")
@@ -198,39 +198,39 @@ class VGG16:
         for dp_i in dp:
             with tf.name_scope(str(int(dp_i*100))):
                 conv1_1 = self.idp_conv_bn_layer( self.x, "conv1_1", 1.0)
-                #conv1_1 = tf.multiply(conv1_1, 1.0/(dp_i*(2-dp_i)))
+                conv1_1 = tf.multiply(conv1_1, 1.0/(dp_i*(2-dp_i)))
                 conv1_2 = self.idp_conv_bn_layer(conv1_1, "conv1_2", 1.0)
-                #conv1_2 = tf.multiply(conv1_2, 1.0/(dp_i*(2-dp_i)))
+                conv1_2 = tf.multiply(conv1_2, 1.0/(dp_i*(2-dp_i)))
                 pool1 = self.max_pool(conv1_2, 'pool1')
 
                 conv2_1 = self.idp_conv_bn_layer(  pool1, "conv2_1", dp_i)
-                #conv2_1 = tf.multiply(conv2_1, 1.0/(dp_i*(2-dp_i)))
+                conv2_1 = tf.multiply(conv2_1, 1.0/(dp_i*(2-dp_i)))
                 conv2_2 = self.idp_conv_bn_layer(conv2_1, "conv2_2", dp_i)
-                #conv2_2 = tf.multiply(conv2_2, 1.0/(dp_i*(2-dp_i)))
+                conv2_2 = tf.multiply(conv2_2, 1.0/(dp_i*(2-dp_i)))
                 pool2 = self.max_pool(conv2_2, 'pool2')
 
                 conv3_1 = self.idp_conv_bn_layer(  pool2, "conv3_1", dp_i)
-                #conv3_1 = tf.multiply(conv3_1, 1.0/(dp_i*(2-dp_i)))
+                conv3_1 = tf.multiply(conv3_1, 1.0/(dp_i*(2-dp_i)))
                 conv3_2 = self.idp_conv_bn_layer(conv3_1, "conv3_2", dp_i)
-                #conv3_2 = tf.multiply(conv3_2, 1.0/(dp_i*(2-dp_i)))
+                conv3_2 = tf.multiply(conv3_2, 1.0/(dp_i*(2-dp_i)))
                 conv3_3 = self.idp_conv_bn_layer(conv3_2, "conv3_3", dp_i)
-                #conv3_3 = tf.multiply(conv3_3, 1.0/(dp_i*(2-dp_i)))
+                conv3_3 = tf.multiply(conv3_3, 1.0/(dp_i*(2-dp_i)))
                 pool3 = self.max_pool(conv3_3, 'pool3')
 
                 conv4_1 = self.idp_conv_bn_layer(  pool3, "conv4_1", dp_i)
-                #conv4_1 = tf.multiply(conv4_1, 1.0/(dp_i*(2-dp_i)))
+                conv4_1 = tf.multiply(conv4_1, 1.0/(dp_i*(2-dp_i)))
                 conv4_2 = self.idp_conv_bn_layer(conv4_1, "conv4_2", dp_i)
-                #conv4_2 = tf.multiply(conv4_2, 1.0/(dp_i*(2-dp_i)))
+                conv4_2 = tf.multiply(conv4_2, 1.0/(dp_i*(2-dp_i)))
                 conv4_3 = self.idp_conv_bn_layer(conv4_2, "conv4_3", dp_i)
-                #conv4_3 = tf.multiply(conv4_3, 1.0/(dp_i*(2-dp_i)))
+                conv4_3 = tf.multiply(conv4_3, 1.0/(dp_i*(2-dp_i)))
                 pool4 = self.max_pool(conv4_3, 'pool4')
 
                 conv5_1 = self.idp_conv_bn_layer(  pool4, "conv5_1", dp_i)
-                #conv5_1 = tf.multiply(conv5_1, 1.0/(dp_i*(2-dp_i)))
+                conv5_1 = tf.multiply(conv5_1, 1.0/(dp_i*(2-dp_i)))
                 conv5_2 = self.idp_conv_bn_layer(conv5_1, "conv5_2", dp_i)
-                #conv5_2 = tf.multiply(conv5_2, 1.0/(dp_i*(2-dp_i)))
+                conv5_2 = tf.multiply(conv5_2, 1.0/(dp_i*(2-dp_i)))
                 conv5_3 = self.idp_conv_bn_layer(conv5_2, "conv5_3", dp_i)
-                #conv5_3 = tf.multiply(conv5_3, 1.0/(dp_i*(2-dp_i)))
+                conv5_3 = tf.multiply(conv5_3, 1.0/(dp_i*(2-dp_i)))
                 pool5 = self.max_pool(conv5_3, 'pool5')
 
                 fc_1 = self.fc_layer(pool5, 'fc_1')
@@ -245,7 +245,7 @@ class VGG16:
                 accuracy = tf.reduce_mean(tf.cast(tf.equal(x=tf.argmax(logits, 1), y=tf.argmax(self.y, 1)), dtype=tf.float32))
 
                 self.prob_dict[str(int(dp_i*100))] = prob
-                self.loss_dict[str(int(dp_i*100))] = loss
+                self.loss_dict[str(int(dp_i*100))] = loss + self._weight_decay * decay
                 self.accu_dict[str(int(dp_i*100))] = accuracy
 
                 tf.summary.scalar(name="accu_at_"+str(int(dp_i*100)), tensor=accuracy)

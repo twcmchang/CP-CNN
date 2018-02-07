@@ -149,11 +149,7 @@ def gamma_sparsify_VGG16(para_dict, thresh=0.5):
                 this = np.where(np.abs(gamma) < 10000)[0]
             else:
                 this = np.where(np.abs(gamma) > thresh)[0]
-            if len(this) == 0:
-                amp_factor = 1
-            else:
-                amp_factor = np.sum(gamma)/np.sum(gamma[this])
-            sparse_dict[k] = gamma[this] * amp_factor
+            sparse_dict[k] = gamma[this] 
             
             # get the layer name
             key = str.split(k,'_gamma')[0]

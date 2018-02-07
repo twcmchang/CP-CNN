@@ -11,7 +11,7 @@ from IPython.display import display
 from imgaug import augmenters as iaa
 
 from vgg16_variational_dp import VGG16
-from utils import CIFAR10, CIFAR100
+from utils import CIFAR10, CIFAR100, gamma_sparsify_VGG16
 
 transform = iaa.Sometimes(
     0.5,
@@ -192,6 +192,11 @@ def train(FLAG):
 
         para_dict = sess.run(vgg16.para_dict)
         np.save(os.path.join(FLAG.save_dir, "para_dict.npy"), para_dict)
+        print("save in %s" % os.path.join(FLAG.save_dir, "para_dict.npy"))
+
+        sp, rcut = gamma_sparsify_VGG16(para_dict, thresh=0.05)
+        np.save(os.path.join(FLAG.save_dir,"sparse_dict.npy"), sp)
+        print("sparsify %s in %s" % (np.round(1-rcut,3), os.path.join(FLAG.save_dir, "sparse_dict.npy")))
         #writer.close()
 
 def initialize_uninitialized(sess):
@@ -222,7 +227,7 @@ def train_loss_agg(FLAG):
 
     # build model using  dp
     dp = [(i+1)*0.05 for i in range(1,20)]
-    vgg16.set_idp_operation(dp=dp, keep_prob=FLAG.keep_prob)
+    vgg16.set_idp_operation(dp=dp, decay=FLAG.decay ,keep_prob=FLAG.keep_prob)
 
     # define tasks
     tasks = ['100','50']
@@ -234,19 +239,23 @@ def train_loss_agg(FLAG):
         obj += vgg16.loss_dict[cur_task]
     
     saver = tf.train.Saver(tf.global_variables(), max_to_keep=len(tasks))
-    
     checkpoint_path = os.path.join(FLAG.save_dir, 'model.ckpt')
+
     tvars_trainable = tf.trainable_variables()
-    
     for rm in vgg16.gamma_var:
        tvars_trainable.remove(rm)
        print('%s is not trainable.'% rm)
+
+    for var in tvars_trainable:
+        if '_bn_' in var.name:
+            tvars_trainable.remove(var)
+            print('%s is not trainable.'% var)
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
 
        # hyper parameters
-        learning_rate = 5e-4
+        learning_rate = 5e-4 / len(tasks)
         batch_size = 64
         epoch = 50
         # alpha = 0.5
@@ -259,6 +268,9 @@ def train_loss_agg(FLAG):
         # optimizer
         # opt = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9, use_nesterov=True)
         opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
+
+        # optimizer
+        train_op = opt.minimize(obj, var_list=tvars_trainable)
 
         # progress bar
         ptrain = IntProgress()
@@ -292,7 +304,7 @@ def train_loss_agg(FLAG):
 
                 sess.run([train_op], feed_dict={vgg16.x: augX,
                                                 vgg16.y: Ytrain[st:ed,:],
-                                                vgg16.is_train: True})
+                                                vgg16.is_train: False})
                 ptrain.value +=1
                 ptrain.description = "Training %s/%s" % (i, ptrain.max)
                 bar_train.next()
