@@ -1,4 +1,3 @@
-# %load train.py
 import os
 import time
 import argparse
@@ -31,11 +30,10 @@ def main():
     parser.add_argument('--dataset', type=str, default='CIFAR-10', help='dataset in use')
     parser.add_argument('--prof_type', type=str, default='all-one', help='type of profile coefficient')
     parser.add_argument('--tesla', type=int, default=0, help='task-wise early stopping and loss aggregation')
-    parser.add_argument('--atp', type=int, default=0, help='alternative training procedure')
-    parser.add_argument('--l1', type=float, default=0.0, help='alternative training procedure')
-    parser.add_argument('--l1_diff', type=float, default=0.0, help='alternative training procedure')
+    parser.add_argument('--lambda_s', type=float, default=0.0, help='multiplier for sparsity regularization')
+    parser.add_argument('--lambda_m', type=float, default=0.0, help='multiplier for monotonicity-induced penalty')
     parser.add_argument('--log_dir', type=str, default='log', help='directory containing log text')
-    parser.add_argument('--decay', type=float, default=0.0, help='l2 loss of weight')
+    parser.add_argument('--decay', type=float, default=0.0, help='multiplier for weight decay')
     parser.add_argument('--keep_prob', type=float, default=1.0, help='dropout keep probability for fc layer')    
     parser.add_argument('--note', type=str, default='', help='argument for taking notes')
 
@@ -65,11 +63,7 @@ def train(FLAG):
     Xtest, Ytest = test_data.test_data, test_data.test_labels
   
     vgg16.build(vgg16_npy_path=FLAG.init_from, prof_type=FLAG.prof_type, conv_pre_training=True, fc_pre_training=False)
-    vgg16.sparsity_train(l1_gamma=FLAG.l1, l1_gamma_diff=FLAG.l1_diff, decay=FLAG.decay, keep_prob=FLAG.keep_prob)
-
-    # build model using  dp
-    # dp = [(i+1)*0.05 for i in range(1,20)]
-    # vgg16.set_idp_operation(dp=dp)
+    vgg16.sparsity_train(l1_gamma=FLAG.lambda_s, l1_gamma_diff=FLAG.lambda_m, decay=FLAG.decay, keep_prob=FLAG.keep_prob)
 
     # define tasks
     tasks = ['var_dp']
@@ -91,7 +85,6 @@ def train(FLAG):
         learning_rate =  5e-4 #adam
         batch_size = 64
         epoch = 50
-        # alpha = 0.5
         early_stop_patience = 4
         min_delta = 0.0001
 
@@ -140,11 +133,9 @@ def train(FLAG):
                 st = i*batch_size
                 ed = (i+1)*batch_size
 
-                # image augment
+                # image augmentation
                 augX = transform.augment_images(Xtrain[st:ed,:,:,:])
                 
-                # sess.run([train_op], feed_dict={vgg16.x: Xtrain[st:ed,:,:,:],
-                #                                 vgg16.y: Ytrain[st:ed,:]})
                 sess.run([train_op], feed_dict={vgg16.x: augX,
                                                 vgg16.y: Ytrain[st:ed,:],
                                                 vgg16.is_train: True})
@@ -204,6 +195,7 @@ def train(FLAG):
         #writer.close()
         arr_spareness.append(1-rcut)
         np.save(os.path.join(FLAG.save_dir,"sprocess.npy"), arr_spareness)
+
 def initialize_uninitialized(sess):
     global_vars = tf.global_variables()
     is_not_initialized = sess.run([tf.is_variable_initialized(var) for var in global_vars])
@@ -216,7 +208,7 @@ def train_loss_agg(FLAG):
     if FLAG.dataset == 'CIFAR-10':
         train_data = CIFAR10(train=True)
         test_data  = CIFAR10(train=False)
-        tasks = ['100', '75', '50', '25', '15']
+        tasks = ['100', '75', '50', '25']
         vgg16 = VGG16(classes=10)
     elif FLAG.dataset == 'CIFAR-100':
         train_data = CIFAR100(train=True)
@@ -264,7 +256,6 @@ def train_loss_agg(FLAG):
         learning_rate = 5e-4 # adam # 4e-3 #sgd
         batch_size = 64
         epoch = 50
-        # alpha = 0.5
         early_stop_patience = 4
         min_delta = 0.0001
 
@@ -288,6 +279,7 @@ def train_loss_agg(FLAG):
         
         spareness = vgg16.spareness(thresh=0.05)
         print("initial spareness: %s" % sess.run(spareness))
+
         # re-initialize
         initialize_uninitialized(sess)
 

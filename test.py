@@ -5,11 +5,8 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from progress.bar import Bar
-from ipywidgets import IntProgress
-from IPython.display import display
 from vgg16_variational_dp import VGG16
-from utils import CIFAR10, CIFAR100
+from utils import CIFAR10, CIFAR100, dp_sparsify_VGG16
 
 def main():
     parser = argparse.ArgumentParser()
@@ -18,10 +15,8 @@ def main():
     parser.add_argument('--dataset', type=str, default='CIFAR-10', help='dataset in use')
     parser.add_argument('--prof_type', type=str, default='all-one', help='type of profile coefficient')
     parser.add_argument('--output', type=str, default='output.csv', help='output filename (csv)')
-    parser.add_argument('--atp', type=int, default=0, help='alternative training procedure')
-    parser.add_argument('--keep_prob', type=float, default=1.0, help='dropout keep probability for fc layer') 
-    # parser.add_argument('--log_dir', type=str, default='log', help='directory containing log text')
-    # parser.add_argument('--note', type=str, default='', help='argument for taking notes')
+    parser.add_argument('--keep_prob', type=float, default=1.0, help='dropout keep probability for fc layer')
+    parser.add_argument('--dot_percent', type=float, default=None, help='dot product percentage in use') 
 
     FLAG = parser.parse_args()
     test(FLAG)
@@ -39,8 +34,14 @@ def test(FLAG):
 
     Xtest, Ytest = test_data.test_data, test_data.test_labels
 
-    print("Build VGG16 models...")
-    vgg16.build(vgg16_npy_path=FLAG.init_from, prof_type=FLAG.prof_type, conv_pre_training=True, fc_pre_training=True)
+    if FLAG.dot_percent is not None:
+        data_dict = np.load(FLAG.init_from, encoding='latin1').item()
+        data_dict = dp_sparsify_VGG16(data_dict,FLAG.dot_percent)
+        vgg16.build(vgg16_npy_path=data_dict, prof_type=FLAG.prof_type, conv_pre_training=True, fc_pre_training=True)
+        print("Build model from %s using dp=%s" % (FLAG.init_from, str(FLAG.dot_percent)))
+    else:
+        vgg16.build(vgg16_npy_path=FLAG.init_from, prof_type=FLAG.prof_type, conv_pre_training=True, fc_pre_training=True)
+        print("Build full model from %s" % (FLAG.init_from))
 
     # build model using  dp
     dp = [(i+1)*0.05 for i in range(1,20)]
@@ -51,55 +52,26 @@ def test(FLAG):
             sess.run(tf.global_variables_initializer())
             saver = tf.train.Saver()
             ckpt = tf.train.get_checkpoint_state(FLAG.save_dir)
-            
-            if ckpt and ckpt.model_checkpoint_path:
-                count = 0
-                for checkpoint in ckpt.all_model_checkpoint_paths:
-                    saver.restore(sess, checkpoint)
-                    print("Model restored %s" % checkpoint)
-                    sess.run(tf.global_variables())
-                    print("Initialized")
-                    count += 1
-                    output = []
-                    # for dp_i in dp:
-                    #     accu = sess.run(vgg16.accu_dict[str(int(dp_i*100))], feed_dict={vgg16.x: Xtest[:5000,:], vgg16.y: Ytest[:5000,:]})
-                    #     accu2 = sess.run(vgg16.accu_dict[str(int(dp_i*100))], feed_dict={vgg16.x: Xtest[5000:,:], vgg16.y: Ytest[5000:,:]})
-                    #     output.append((accu+accu2)/2)
-                    #     print("At DP={dp:.4f}, accu={perf:.4f}".format(dp=dp_i, perf=(accu+accu2)/2))
-                    for dp_i in dp:
-                        val_accu = 0
-                        n_batch = 0
-                        for i in range(int(Xtest.shape[0]/200)):
-                            st = i*200
-                            ed = (i+1)*200
-                            accu = sess.run(vgg16.accu_dict[str(int(dp_i*100))],
-                                                feed_dict={vgg16.x: Xtest[st:ed,:],
-                                                        vgg16.y: Ytest[st:ed,:],
-                                                        vgg16.is_train: False})
-                            val_accu += accu
-                            n_batch +=1
-                        output.append(val_accu/n_batch)
-                    res = pd.DataFrame.from_dict({'DP':[int(dp_i*100) for dp_i in dp],'accu':output})
-                    res.to_csv("task%s_%s" % (count, FLAG.output), index=False)
-                    print("Write into task%s_%s" % (count, FLAG.output))
 
+            if ckpt and ckpt.model_checkpoint_path:
+                saver.restore(sess, checkpoint)
+                print("Model restored %s" % checkpoint)
+                sess.run(tf.global_variables())
+            else:
+                print("No model checkpoint in %s" FLAG.save_dir)
         else:
-            count = 0
             sess.run(tf.global_variables_initializer())
             sess.run(tf.global_variables())
-            print("Initialized")
-            print(sess.run(vgg16.para_dict['conv1_1_bn_mean']))
-            print(sess.run(vgg16.para_dict['conv1_1_bn_variance']))
-            count += 1
-            output = []
-            for dp_i in dp:
-                accu = sess.run(vgg16.accu_dict[str(int(dp_i*100))], feed_dict={vgg16.x: Xtest[:5000,:], vgg16.y: Ytest[:5000,:], vgg16.is_train: False})
-                accu2 = sess.run(vgg16.accu_dict[str(int(dp_i*100))], feed_dict={vgg16.x: Xtest[5000:,:], vgg16.y: Ytest[5000:,:], vgg16.is_train: False})
-                output.append((accu+accu2)/2)
-                print("At DP={dp:.4f}, accu={perf:.4f}".format(dp=dp_i, perf=(accu+accu2)/2))
-            res = pd.DataFrame.from_dict({'DP':[int(dp_i*100) for dp_i in dp],'accu':output})
-            res.to_csv("task%s_%s" % (count, FLAG.output), index=False)
-            print("Write into task%s_%s" % (count, FLAG.output))
+        print("Initialized")
+        output = []
+        for dp_i in dp:
+            accu = sess.run(vgg16.accu_dict[str(int(dp_i*100))], feed_dict={vgg16.x: Xtest[:5000,:], vgg16.y: Ytest[:5000,:], vgg16.is_train: False})
+            accu2 = sess.run(vgg16.accu_dict[str(int(dp_i*100))], feed_dict={vgg16.x: Xtest[5000:,:], vgg16.y: Ytest[5000:,:], vgg16.is_train: False})
+            output.append((accu+accu2)/2)
+            print("At DP={dp:.4f}, accu={perf:.4f}".format(dp=dp_i, perf=(accu+accu2)/2))
+        res = pd.DataFrame.from_dict({'DP':[int(dp_i*100) for dp_i in dp],'accu':output})
+        res.to_csv(FLAG.output, index=False)
+        print("Write into %s" % FLAG.output)
 
 
 if __name__ == '__main__':

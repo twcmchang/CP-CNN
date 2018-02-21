@@ -145,10 +145,6 @@ def gamma_sparsify_VGG16(para_dict, thresh=0.5):
         if 'gamma' in k:
             # trim networks based on gamma
             gamma = v                      
-            # if 'conv1' in k:
-            #     this = np.where(np.abs(gamma) < 10000)[0]
-            # else:
-            #     this = np.where(np.abs(gamma) > thresh)[0]
             this = np.where(np.abs(gamma) > thresh)[0]
             sparse_dict[k] = gamma[this] 
             
@@ -179,3 +175,35 @@ def gamma_sparsify_VGG16(para_dict, thresh=0.5):
     sparse_dict['fc_1'] = [W_, b_]
     sparse_dict['fc_2'] = para_dict['fc_2']
     return sparse_dict, N_remain/N_total
+
+def dp_sparsify_VGG16(para_dict, dp):
+    """
+    dp: usage percentage of channels in each layer
+    """
+    new_dict = {}
+    first = True
+    for k,v in sorted(para_dict.items()):
+        if 'bn_mean' in k:
+            new_dict[k] = v[:int(len(v)*dp)]
+        elif 'bn_variance' in k:
+            new_dict[k] = v[:int(len(v)*dp)]
+        elif 'gamma' in k:
+            new_dict[k] = v[:int(len(v)*dp)]
+        elif 'beta' in k:
+            new_dict[k] = v[:int(len(v)*dp)]
+        elif 'fc_1' in k:
+            O = v[0].shape[0]
+            new_dict[k] = [v[0][:int(O*dp),:], v[1]]
+        elif 'conv' in k:
+            O = v[0].shape[3]
+            if first:
+                new_dict[k] = v[0][:,:,:,:], v[1][:] #int(O*dp)
+                first = False
+                last = O
+            else:
+                new_dict[k] = v[0][:,:,:last,:int(O*dp)], v[1][:int(O*dp)]
+                last = int(O*dp)
+        else:
+            new_dict[k] = v
+            continue
+    return new_dict
