@@ -145,10 +145,11 @@ def gamma_sparsify_VGG16(para_dict, thresh=0.5):
         if 'gamma' in k:
             # trim networks based on gamma
             gamma = v                      
-            if 'conv1' in k:
-                this = np.where(np.abs(gamma) < 10000)[0]
-            else:
-                this = np.where(np.abs(gamma) > thresh)[0]
+            # if 'conv1' in k:
+            #     this = np.where(np.abs(gamma) < 10000)[0]
+            # else:
+            #     this = np.where(np.abs(gamma) > thresh)[0]
+            this = np.where(np.abs(gamma) > thresh)[0]
             sparse_dict[k] = gamma[this] 
             
             # get the layer name

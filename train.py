@@ -22,6 +22,8 @@ transform = iaa.Sometimes(
     )
 )
 
+arr_spareness = []
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--init_from', type=str, default='vgg16.npy', help='pre-trained weights')
@@ -86,7 +88,7 @@ def train(FLAG):
         sess.run(tf.global_variables_initializer())
 
         # hyper parameters
-        learning_rate = 5e-4
+        learning_rate =  5e-4 #adam
         batch_size = 64
         epoch = 50
         # alpha = 0.5
@@ -118,6 +120,7 @@ def train(FLAG):
         # optimizer
         train_op = opt.minimize(obj, var_list=tvars_trainable)
         spareness = vgg16.spareness(thresh=0.05)
+        arr_spareness.append(sess.run(spareness))
         print("initial spareness: %s" % sess.run(spareness))
         # re-initialize
         initialize_uninitialized(sess)
@@ -127,7 +130,7 @@ def train(FLAG):
         current_best_val_loss = 100000 # a large number
 
         # optimize when the aggregated obj
-        while(patience_counter < early_stop_patience or epoch_counter > epoch):
+        while(patience_counter < early_stop_patience):
             stime = time.time()
             bar_train = Bar('Training', max=int(Xtrain.shape[0]/batch_size), suffix='%(index)d/%(max)d - %(percent).1f%% - %(eta)ds')
             bar_val =  Bar('Validation', max=int(Xtest.shape[0]/batch_size), suffix='%(index)d/%(max)d - %(percent).1f%% - %(eta)ds')
@@ -166,6 +169,7 @@ def train(FLAG):
             val_loss = val_loss/pval.value
             val_accu = val_accu/pval.value
 
+            arr_spareness.append(sess.run(spareness)) 
             print("\nspareness: %s" % sess.run(spareness))
             # early stopping check
             if (current_best_val_loss - val_loss) > min_delta:
@@ -198,7 +202,8 @@ def train(FLAG):
         np.save(os.path.join(FLAG.save_dir,"sparse_dict.npy"), sp)
         print("sparsify %s in %s" % (np.round(1-rcut,3), os.path.join(FLAG.save_dir, "sparse_dict.npy")))
         #writer.close()
-
+        arr_spareness.append(1-rcut)
+        np.save(os.path.join(FLAG.save_dir,"sprocess.npy"), arr_spareness)
 def initialize_uninitialized(sess):
     global_vars = tf.global_variables()
     is_not_initialized = sess.run([tf.is_variable_initialized(var) for var in global_vars])
@@ -211,10 +216,12 @@ def train_loss_agg(FLAG):
     if FLAG.dataset == 'CIFAR-10':
         train_data = CIFAR10(train=True)
         test_data  = CIFAR10(train=False)
+        tasks = ['100', '75', '50', '25', '15']
         vgg16 = VGG16(classes=10)
     elif FLAG.dataset == 'CIFAR-100':
         train_data = CIFAR100(train=True)
         test_data  = CIFAR100(train=False)
+        tasks = ['100', '75', '50', '25']
         vgg16 = VGG16(classes=100)
     else:
         raise ValueError("dataset should be either CIFAR-10 or CIFAR-100.")
@@ -230,7 +237,6 @@ def train_loss_agg(FLAG):
     vgg16.set_idp_operation(dp=dp, decay=FLAG.decay ,keep_prob=FLAG.keep_prob)
 
     # define tasks
-    tasks = ['100','50']
     print(tasks)
 
     # loss aggregation
@@ -255,7 +261,7 @@ def train_loss_agg(FLAG):
         sess.run(tf.global_variables_initializer())
 
        # hyper parameters
-        learning_rate = 5e-4 / len(tasks)
+        learning_rate = 5e-4 # adam # 4e-3 #sgd
         batch_size = 64
         epoch = 50
         # alpha = 0.5
@@ -290,7 +296,7 @@ def train_loss_agg(FLAG):
         current_best_val_loss = 100000 # a large number
 
         # optimize when the aggregated obj
-        while(patience_counter < early_stop_patience or epoch_counter > epoch):
+        while(patience_counter < early_stop_patience):
             stime = time.time()
             bar_train = Bar('Training', max=int(Xtrain.shape[0]/batch_size), suffix='%(index)d/%(max)d - %(percent).1f%% - %(eta)ds')
             bar_val =  Bar('Validation', max=int(Xtest.shape[0]/batch_size), suffix='%(index)d/%(max)d - %(percent).1f%% - %(eta)ds')
