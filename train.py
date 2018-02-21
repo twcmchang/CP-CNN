@@ -9,8 +9,8 @@ from ipywidgets import IntProgress
 from IPython.display import display
 from imgaug import augmenters as iaa
 
-from vgg16_variational_dp import VGG16
-from utils import CIFAR10, CIFAR100, gamma_sparsify_VGG16
+from model import VGG16
+from utils import CIFAR10, CIFAR100, gammaSparsifyVGG16
 
 transform = iaa.Sometimes(
     0.5,
@@ -189,7 +189,7 @@ def train(FLAG):
         np.save(os.path.join(FLAG.save_dir, "para_dict.npy"), para_dict)
         print("save in %s" % os.path.join(FLAG.save_dir, "para_dict.npy"))
 
-        sp, rcut = gamma_sparsify_VGG16(para_dict, thresh=0.05)
+        sp, rcut = gammaSparsifyVGG16(para_dict, thresh=0.05)
         np.save(os.path.join(FLAG.save_dir,"sparse_dict.npy"), sp)
         print("sparsify %s in %s" % (np.round(1-rcut,3), os.path.join(FLAG.save_dir, "sparse_dict.npy")))
         #writer.close()
@@ -349,6 +349,6 @@ def train_loss_agg(FLAG):
         saver.save(sess, checkpoint_path, global_step=epoch_counter)
 
         para_dict = sess.run(vgg16.para_dict)
-        np.save(os.path.join(FLAG.save_dir, "para_dict.npy"), para_dict)
+        np.save(os.path.join(FLAG.save_dir, "finetune_dict.npy"), para_dict)
 if __name__ == '__main__':
     main()

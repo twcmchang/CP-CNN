@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from vgg16_variational_dp import VGG16
-from utils import CIFAR10, CIFAR100, dp_sparsify_VGG16
+from model import VGG16
+from utils import CIFAR10, CIFAR100, dpSparsifyVGG16, countFlopsParas
 
 def main():
     parser = argparse.ArgumentParser()
@@ -16,7 +16,7 @@ def main():
     parser.add_argument('--prof_type', type=str, default='all-one', help='type of profile coefficient')
     parser.add_argument('--output', type=str, default='output.csv', help='output filename (csv)')
     parser.add_argument('--keep_prob', type=float, default=1.0, help='dropout keep probability for fc layer')
-    parser.add_argument('--dot_percent', type=float, default=None, help='dot product percentage in use') 
+    parser.add_argument('--fidelity', type=float, default=None, help='fidelity in use') 
 
     FLAG = parser.parse_args()
     test(FLAG)
@@ -34,11 +34,11 @@ def test(FLAG):
 
     Xtest, Ytest = test_data.test_data, test_data.test_labels
 
-    if FLAG.dot_percent is not None:
+    if FLAG.fidelity is not None:
         data_dict = np.load(FLAG.init_from, encoding='latin1').item()
-        data_dict = dp_sparsify_VGG16(data_dict,FLAG.dot_percent)
+        data_dict = dpSparsifyVGG16(data_dict,FLAG.fidelity)
         vgg16.build(vgg16_npy_path=data_dict, prof_type=FLAG.prof_type, conv_pre_training=True, fc_pre_training=True)
-        print("Build model from %s using dp=%s" % (FLAG.init_from, str(FLAG.dot_percent)))
+        print("Build model from %s using dp=%s" % (FLAG.init_from, str(FLAG.fidelity*100)))
     else:
         vgg16.build(vgg16_npy_path=FLAG.init_from, prof_type=FLAG.prof_type, conv_pre_training=True, fc_pre_training=True)
         print("Build full model from %s" % (FLAG.init_from))
@@ -46,6 +46,9 @@ def test(FLAG):
     # build model using  dp
     dp = [(i+1)*0.05 for i in range(1,20)]
     vgg16.set_idp_operation(dp=dp, keep_prob=FLAG.keep_prob)
+
+    flops, params = countFlopsParas(vgg16)
+    print("Flops: %3f M, Paras: %3f M" % (flops/1e6, params/1e6))
 
     with tf.Session() as sess:
         if FLAG.save_dir is not None:
@@ -58,7 +61,7 @@ def test(FLAG):
                 print("Model restored %s" % checkpoint)
                 sess.run(tf.global_variables())
             else:
-                print("No model checkpoint in %s" FLAG.save_dir)
+                print("No model checkpoint in %s" % FLAG.save_dir)
         else:
             sess.run(tf.global_variables_initializer())
             sess.run(tf.global_variables())

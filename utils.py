@@ -137,7 +137,7 @@ class CIFAR100(CIFAR10):
     ]
 
 
-def gamma_sparsify_VGG16(para_dict, thresh=0.5):
+def gammaSparsifyVGG16(para_dict, thresh=0.5):
     last = None
     sparse_dict = {}
     N_total, N_remain = 0., 0.
@@ -176,14 +176,16 @@ def gamma_sparsify_VGG16(para_dict, thresh=0.5):
     sparse_dict['fc_2'] = para_dict['fc_2']
     return sparse_dict, N_remain/N_total
 
-def dp_sparsify_VGG16(para_dict, dp):
+def dpSparsifyVGG16(para_dict, dp):
     """
     dp: usage percentage of channels in each layer
     """
     new_dict = {}
     first = True
     for k,v in sorted(para_dict.items()):
-        if 'bn_mean' in k:
+        if 'conv1_1_' in k:
+            new_dict[k] = v
+        elif 'bn_mean' in k:
             new_dict[k] = v[:int(len(v)*dp)]
         elif 'bn_variance' in k:
             new_dict[k] = v[:int(len(v)*dp)]
@@ -207,3 +209,82 @@ def dp_sparsify_VGG16(para_dict, dp):
             new_dict[k] = v
             continue
     return new_dict
+
+def count_number_params(para_dict):
+    n = 0
+    for k,v in sorted(para_dict.items()):
+        if 'bn_mean' in k:
+            continue
+        elif 'bn_variance' in k:
+            continue
+        elif 'gamma' in k:
+            continue
+        elif 'beta' in k:
+            continue
+        elif 'conv' in k or 'fc' in k:
+            n += get_params_shape(v[0].shape.as_list())
+            n += get_params_shape(v[1].shape.as_list())
+    return n
+
+def get_params_shape(shape):
+    n = 1
+    for dim in shape:
+        n = n*dim
+    return n
+
+def count_flops(para_dict, net_shape):
+    input_shape = (3 ,32 ,32) # Format:(channels, rows,cols)
+    total_flops_per_layer = 0
+    input_count = 0
+    for k,v in sorted(para_dict.items()):
+        if 'bn_mean' in k:
+            continue
+        elif 'bn_variance' in k:
+            continue
+        elif 'gamma' in k:
+            continue
+        elif 'beta' in k:
+            continue
+        elif 'fc' in k:
+            continue
+        elif 'conv' in k:
+            conv_filter = v[0].shape.as_list()[3::-1] # (64 ,3 ,3 ,3)  # Format: (num_filters, channels, rows, cols)
+            stride = 1
+            padding = 1
+
+            if conv_filter[1] == 0:
+                n = conv_filter[2] * conv_filter[3] # vector_length
+            else:
+                n = conv_filter[1] * conv_filter[2] * conv_filter[3]  # vector_length
+
+            flops_per_instance = n + ( n -1)    # general defination for number of flops (n: multiplications and n-1: additions)
+
+            num_instances_per_filter = (( input_shape[1] - conv_filter[2] + 2 * padding) / stride) + 1  # for rows
+            num_instances_per_filter *= ((input_shape[1] - conv_filter[2] + 2 * padding) / stride) + 1  # multiplying with cols
+
+            flops_per_filter = num_instances_per_filter * flops_per_instance
+            total_flops_per_layer += flops_per_filter * conv_filter[0]  # multiply with number of filters
+
+            total_flops_per_layer += conv_filter[0] * input_shape[1] * input_shape[2]
+
+            input_shape = net_shape[input_count].as_list()[3:0:-1]
+            input_count +=1
+
+    total_flops_per_layer += net_shape[-1].as_list()[3] * 512 *2 + 512*10*2
+    return total_flops_per_layer
+
+def countFlopsParas(net):
+    total_flops = count_flops(net.para_dict, net.net_shape)
+    if total_flops / 1e9 > 1:   # for Giga Flops
+        print(total_flops/ 1e9 ,'{}'.format('GFlops'))
+    else:
+        print(total_flops / 1e6 ,'{}'.format('MFlops'))
+
+    total_params = count_number_params(net.para_dict)
+
+    if total_params / 1e9 > 1:   # for Giga Flops
+        print(total_params/ 1e9 ,'{}'.format('G'))
+    else:
+        print(total_params / 1e6 ,'{}'.format('M'))
+    
+    return total_flops, total_params
