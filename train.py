@@ -7,21 +7,11 @@ import tensorflow as tf
 from progress.bar import Bar
 from ipywidgets import IntProgress
 from IPython.display import display
-from imgaug import augmenters as iaa
 
 from model import VGG16
 from utils import CIFAR10, CIFAR100, gammaSparsifyVGG16
 
-transform = iaa.Sometimes(
-    0.5,
-    iaa.Affine(
-        scale={"x":(0.9,1.1), "y":(0.9,1.1)},
-        translate_percent={"x":(-0.1,0.1), "y":(-0.1,0.1)},
-        rotate=(-30,30),
-    )
-)
-
-arr_spareness = []
+arr_sparsity = []
 
 def main():
     parser = argparse.ArgumentParser()
@@ -74,9 +64,6 @@ def train(FLAG):
     checkpoint_path = os.path.join(FLAG.save_dir, 'model.ckpt')
     tvars_trainable = tf.trainable_variables()
     
-    #for rm in vgg16.gamma_var:
-    #    tvars_trainable.remove(rm)
-    #    print('%s is not trainable.'% rm)
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -92,11 +79,7 @@ def train(FLAG):
         epoch_counter = 0
 
         # optimizer
-        # opt = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9, use_nesterov=True)
         opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
-
-        # tensorboard writer
-        # writer = tf.summary.FileWriter(FLAG.log_dir, sess.graph)
 
         # progress bar
         ptrain = IntProgress()
@@ -112,9 +95,9 @@ def train(FLAG):
 
         # optimizer
         train_op = opt.minimize(obj, var_list=tvars_trainable)
-        spareness = vgg16.spareness(thresh=0.05)
-        arr_spareness.append(sess.run(spareness))
-        print("initial spareness: %s" % sess.run(spareness))
+        sparsity = vgg16.sparsity(thresh=0.05)
+        arr_sparsity.append(sess.run(sparsity))
+        print("initial sparsity: %s" % sess.run(sparsity))
         # re-initialize
         initialize_uninitialized(sess)
 
@@ -132,11 +115,8 @@ def train(FLAG):
             for i in range(int(Xtrain.shape[0]/batch_size)):
                 st = i*batch_size
                 ed = (i+1)*batch_size
-
-                # image augmentation
-                augX = transform.augment_images(Xtrain[st:ed,:,:,:])
                 
-                sess.run([train_op], feed_dict={vgg16.x: augX,
+                sess.run([train_op], feed_dict={vgg16.x: Xtrain[st:ed,:],
                                                 vgg16.y: Ytrain[st:ed,:],
                                                 vgg16.is_train: True})
                 ptrain.value +=1
@@ -160,8 +140,8 @@ def train(FLAG):
             val_loss = val_loss/pval.value
             val_accu = val_accu/pval.value
 
-            arr_spareness.append(sess.run(spareness)) 
-            print("\nspareness: %s" % sess.run(spareness))
+            arr_sparsity.append(sess.run(sparsity)) 
+            print("\nsparsity: %s" % sess.run(sparsity))
             # early stopping check
             if (current_best_val_loss - val_loss) > min_delta:
                 current_best_val_loss = val_loss
@@ -174,7 +154,6 @@ def train(FLAG):
             Xtrain, Ytrain = Xtrain[idx,:,:,:], Ytrain[idx,:]
 
             # epoch end
-            # writer.add_summary(epoch_summary, epoch_counter)
             epoch_counter += 1
 
             ptrain.value = 0
@@ -192,9 +171,9 @@ def train(FLAG):
         sp, rcut = gammaSparsifyVGG16(para_dict, thresh=0.05)
         np.save(os.path.join(FLAG.save_dir,"sparse_dict.npy"), sp)
         print("sparsify %s in %s" % (np.round(1-rcut,3), os.path.join(FLAG.save_dir, "sparse_dict.npy")))
-        #writer.close()
-        arr_spareness.append(1-rcut)
-        np.save(os.path.join(FLAG.save_dir,"sprocess.npy"), arr_spareness)
+
+        arr_sparsity.append(1-rcut)
+        np.save(os.path.join(FLAG.save_dir,"sprocess.npy"), arr_sparsity)
 
 def initialize_uninitialized(sess):
     global_vars = tf.global_variables()
@@ -263,10 +242,8 @@ def train_loss_agg(FLAG):
         epoch_counter = 0
 
         # optimizer
-        # opt = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9, use_nesterov=True)
         opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
 
-        # optimizer
         train_op = opt.minimize(obj, var_list=tvars_trainable)
 
         # progress bar
@@ -277,8 +254,8 @@ def train_loss_agg(FLAG):
         ptrain.max = int(Xtrain.shape[0]/batch_size)
         pval.max = int(Xtest.shape[0]/batch_size)
         
-        spareness = vgg16.spareness(thresh=0.05)
-        print("initial spareness: %s" % sess.run(spareness))
+        sparsity = vgg16.sparsity(thresh=0.05)
+        print("initial sparsity: %s" % sess.run(sparsity))
 
         # re-initialize
         initialize_uninitialized(sess)
@@ -298,9 +275,7 @@ def train_loss_agg(FLAG):
                 st = i*batch_size
                 ed = (i+1)*batch_size
 
-                augX = transform.augment_images(Xtrain[st:ed,:,:,:])
-
-                sess.run([train_op], feed_dict={vgg16.x: augX,
+                sess.run([train_op], feed_dict={vgg16.x: Xtrain[st:ed,:,:,:],
                                                 vgg16.y: Ytrain[st:ed,:],
                                                 vgg16.is_train: False})
                 ptrain.value +=1
@@ -324,7 +299,7 @@ def train_loss_agg(FLAG):
             val_loss = val_loss/pval.value
             val_accu = val_accu/pval.value
 
-            print("\nspareness: %s" % sess.run(spareness))
+            print("\nsparsity: %s" % sess.run(sparsity))
             # early stopping check
             if (current_best_val_loss - val_loss) > min_delta:
                 current_best_val_loss = val_loss
@@ -337,7 +312,6 @@ def train_loss_agg(FLAG):
             Xtrain, Ytrain = Xtrain[idx,:,:,:], Ytrain[idx,:]
 
             # epoch end
-            # writer.add_summary(epoch_summary, epoch_counter)
             epoch_counter += 1
 
             ptrain.value = 0

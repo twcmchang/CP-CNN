@@ -266,7 +266,7 @@ class VGG16:
         self.summary_op = tf.summary.merge_all()
         print(("Set dp operations finished: %ds" % (time.time() - start_time)))
 
-    def spareness(self, thresh=0.05):
+    def sparsity(self, thresh=0.05):
         N_active, N_total = 0,0
         for gamma in self.gamma_var:
             m = tf.cast(tf.less(tf.abs(gamma), thresh), tf.float32)

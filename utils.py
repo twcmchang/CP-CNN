@@ -3,8 +3,10 @@ import os
 import errno
 import sys
 import pickle
+import tarfile
+import zipfile
 import numpy as np
-
+from urllib.request import urlretrieve
 
 class CIFAR10(object):
     """`CIFAR10 <https://www.cs.toronto.edu/~kriz/cifar.html>`_ Dataset.
@@ -23,7 +25,7 @@ class CIFAR10(object):
             downloaded again.
 
     """
-    root = '/data/put_data/cmchang/'
+    root = 'data/'
     base_folder = 'cifar-10-batches-py'
     url = "https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz"
     filename = "cifar-10-python.tar.gz"
@@ -42,6 +44,9 @@ class CIFAR10(object):
     ]
 
     def __init__(self, train=True):
+        if not os.path.exists(os.path.join(self.root,self.base_folder)):
+            self.maybe_download_and_extract()
+
         self.train = train  # training set or test set
 
         # now load the picked numpy arrays
@@ -116,13 +121,40 @@ class CIFAR10(object):
     def _one_hot_encoded(self, class_numbers):
         return np.eye(self.num_classes, dtype=float)[class_numbers]
 
+    def _print_download_progress(self,count, block_size, total_size):
+        pct_complete = float(count * block_size) / total_size
+        msg = "\r- Download progress: {0:.1%}".format(pct_complete)
+        sys.stdout.write(msg)
+        sys.stdout.flush()
+
+    def maybe_download_and_extract(self):
+        main_directory = self.root
+        if not os.path.exists(main_directory):
+            os.makedirs(main_directory)
+
+        filename = self.url.split('/')[-1]
+        file_path = os.path.join(main_directory, filename)
+        zip_cifar = file_path
+        if not os.path.exists(file_path):
+            file_path, _ = urlretrieve(url=self.url, filename=file_path, reporthook=self._print_download_progress)
+
+        print()
+        print("Download finished. Extracting files.")
+        if file_path.endswith(".zip"):
+            zipfile.ZipFile(file=file_path, mode="r").extractall(main_directory)
+        elif file_path.endswith((".tar.gz", ".tgz")):
+            tarfile.open(name=file_path, mode="r:gz").extractall(main_directory)
+        print("Done.")
+
+        os.remove(zip_cifar)
+
 
 class CIFAR100(CIFAR10):
     """`CIFAR100 <https://www.cs.toronto.edu/~kriz/cifar.html>`_ Dataset.
 
     This is a subclass of the `CIFAR10` Dataset.
     """
-    root = '/data/put_data/cmchang/'
+    root = 'data/'
     base_folder = 'cifar-100-python'
     url = "https://www.cs.toronto.edu/~kriz/cifar-100-python.tar.gz"
     filename = "cifar-100-python.tar.gz"
