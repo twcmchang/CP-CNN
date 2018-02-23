@@ -1,13 +1,39 @@
-# FPDS
+# Channel-Prioritized Convolutional Neural Network with Sparsity and Multi-fidelity
+This repository contains the code to reproduce the core results from the paper [Channel-Prioritized Convolutional Neural Networks with Sparsity and Multi-fidelity](https://openreview.net/pdf?id=S1qru_kDf) in the review process.
 
-- Sparsity by channel-prioritized training
+# Dependencies
+This work uses Python 3.6.0. Before running the code, you have to install
+- tensorflow==1.4.0
+- numpy==1.13.0
+- pandas==0.20.3
+- Pillow==4.3.0
+- progress==1.3
+
+The above dependencies can be installed using pip by running
 ```
-python3 train.py --init_from vgg16.npy --tesla 0 --keep_prob 1 --prof_type linear --l1 0.0005 --l1_diff 0.001 --decay 0.00005 --save_dir save_dir
+pip install -r requirement.txt
 ```
 
-- Multi-fidelity by TESLA training
+# Usage
+To have a quick start on the experiment of CIFAR-10 by running
 ```
-python3 train.py --init_from save_dir/sparse_dict.npy --tesla 1 --keep_prob 1 --prof_type linear --save_dir save_tesla_v1
+bash quick_start.sh <GPU_ID>
 ```
 
+Training stage for channel prioritization and network sparsity
+```
+python3 train.py --prof_type linear --init_from <pre-trained_net_params.npy> --tesla 0 --keep_prob 1  --lambda_s 0.001 --lambda_m 0.001 --decay 0.00005 --save_dir <save_directory>
+```
+
+Fine-tuning stage (set tesla=1) for loss aggregation
+```
+python3 train.py --prof_type linear --init_from <pruned_net_params.npy> --tesla 1 --keep_prob 1 --save_dir save_tesla_v1
+```
+
+Testing multi-fidelity inference
+```
+python3 test.py --keep_prob 1 --init_from <finetuned_net_params.npy> --output <output_file>
+```
+
+If you have questions, please write an email to cmchang@iis.sinica.edu.tw.
 
