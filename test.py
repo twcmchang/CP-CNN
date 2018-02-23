@@ -51,20 +51,8 @@ def test(FLAG):
     print("Flops: %3f M, Paras: %3f M" % (flops/1e6, params/1e6))
 
     with tf.Session() as sess:
-        if FLAG.save_dir is not None:
-            sess.run(tf.global_variables_initializer())
-            saver = tf.train.Saver()
-            ckpt = tf.train.get_checkpoint_state(FLAG.save_dir)
-
-            if ckpt and ckpt.model_checkpoint_path:
-                saver.restore(sess, checkpoint)
-                print("Model restored %s" % checkpoint)
-                sess.run(tf.global_variables())
-            else:
-                print("No model checkpoint in %s" % FLAG.save_dir)
-        else:
-            sess.run(tf.global_variables_initializer())
-            sess.run(tf.global_variables())
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.global_variables())
         print("Initialized")
         output = []
         for dp_i in dp:
